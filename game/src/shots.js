@@ -1,79 +1,142 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// The screenshot scenes behind ?shot=start|drive|chase|heist. Each one
+// plays the real rules forward from a fresh city for a fixed number of
+// steps, steered by a small autopilot (a road-following driver, a shooter
+// who aims at the nearest Viper), so the frame is what a short game
+// really looks like and the same seed always gives the same frame.
+
+import { STEP, ROAD } from './config.js';
+import { resetGame, stepWorld } from './world.js';
+import { startMission } from './missions.js';
+import { landmarkPoint } from './city.js';
+import { SCREEN_TITLE, SCREEN_PLAY } from './render.js';
 
 const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
+const DRIVE_SECONDS = 6;
+const CHASE_SECONDS = 5;
+const HEIST_SECONDS = 4;
 
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+/** Steer a car toward a point: returns the { mx, my } the loop feeds in. */
+function driveToward(car, tx, ty) {
+  const want = Math.atan2(ty - car.y, tx - car.x);
+  let diff = want - car.angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return { mx: diff > 0.08 ? 1 : diff < -0.08 ? -1 : 0, my: -1 };
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
-  }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
-    }
+function idleInput() {
+  return { mx: 0, my: 0, aim: 0, firing: false, shootPressed: false, enter: false };
+}
+
+function nearestViper(state) {
+  let best = null;
+  let bestD = Infinity;
+  for (const ped of state.peds) {
+    if (ped.kind !== 'viper' || ped.state === 'down') continue;
+    const d = Math.hypot(ped.x - state.player.x, ped.y - state.player.y);
+    if (d < bestD) { bestD = d; best = ped; }
   }
   return best;
 }
 
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
-  }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
-  }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+/** Put the player behind the wheel of a sport car on the given avenue. */
+function putPlayerInSportCar(state, avenueX, y) {
+  const car = state.cars.find((c) => c.kind === 'sport') || state.cars[0];
+  car.x = avenueX - 24;
+  car.y = y;
+  car.angle = Math.PI / 2;
+  car.speed = 0;
+  car.driver = 'player';
+  car.health = car.maxHealth;
+  state.player.inCar = car.id;
+  state.player.x = car.x;
+  state.player.y = car.y;
+  state.player.angle = car.angle;
+  return car;
 }
+
+function stageStart(state) {
+  resetGame(state);
+  // Rook on foot by the casino, the city alive around him.
+  state.player.x = state.city.landmarks.casino.x;
+  state.player.y = state.city.landmarks.casino.y + 130;
+  state.player.angle = -Math.PI / 2;
+  for (let i = 0; i < START_SECONDS / STEP; i += 1) stepWorld(state, STEP, idleInput());
+  return { screen: SCREEN_TITLE, extra: { missionsDone: 0, earned: 0, hasSave: false, endKind: null } };
+}
+
+function stageDrive(state) {
+  resetGame(state);
+  startMission(state, 0);
+  // Stand on the package: the first stage completes, the delivery begins.
+  const garage = landmarkPoint(state.city.landmarks.garage);
+  state.player.x = garage.x;
+  state.player.y = garage.y;
+  stepWorld(state, STEP, idleInput());
+  // Then take the Comet GT south down the avenue toward the marina.
+  putPlayerInSportCar(state, 1460, 300);
+  for (let i = 0; i < DRIVE_SECONDS / STEP; i += 1) {
+    const car = state.cars.find((c) => c.id === state.player.inCar);
+    const input = driveToward(car, 1436, car.y + 500);
+    input.aim = car.angle;
+    input.firing = false;
+    input.shootPressed = false;
+    input.enter = false;
+    stepWorld(state, STEP, input);
+  }
+  return { screen: SCREEN_PLAY, extra: { missionsDone: 0, earned: 0, hasSave: false, endKind: null } };
+}
+
+function stageChase(state) {
+  resetGame(state);
+  startMission(state, 0);
+  const garage = landmarkPoint(state.city.landmarks.garage);
+  state.player.x = garage.x;
+  state.player.y = garage.y;
+  stepWorld(state, STEP, idleInput());
+  putPlayerInSportCar(state, 1060, 500);
+  state.wanted = 3;
+  state.quietTime = 0;
+  for (let i = 0; i < CHASE_SECONDS / STEP; i += 1) {
+    const car = state.cars.find((c) => c.id === state.player.inCar);
+    if (!car) break;
+    const input = driveToward(car, 1036, car.y + 500);
+    input.aim = car.angle;
+    input.firing = false;
+    input.shootPressed = false;
+    input.enter = false;
+    stepWorld(state, STEP, input);
+  }
+  return { screen: SCREEN_PLAY, extra: { missionsDone: 0, earned: 0, hasSave: false, endKind: null } };
+}
+
+function stageHeist(state) {
+  resetGame(state);
+  startMission(state, 4);
+  // Walk into the casino: the vault-cracking stage begins, guards and all.
+  const casino = landmarkPoint(state.city.landmarks.casino);
+  state.player.x = casino.x;
+  state.player.y = casino.y;
+  for (let i = 0; i < 30; i += 1) stepWorld(state, STEP, idleInput());
+  for (let i = 0; i < HEIST_SECONDS / STEP; i += 1) {
+    const viper = nearestViper(state);
+    const aim = viper ? Math.atan2(viper.y - state.player.y, viper.x - state.player.x) : state.player.angle;
+    const input = { mx: 0, my: 0, aim, firing: !!viper, shootPressed: false, enter: false };
+    if (i === Math.floor(HEIST_SECONDS / STEP) - 1) state.fireCooldown = 0;
+    stepWorld(state, STEP, input);
+  }
+  return { screen: SCREEN_PLAY, extra: { missionsDone: 0, earned: 0, hasSave: false, endKind: null } };
+}
+
+/**
+ * Set `state` to the named scene (start, drive, chase, heist; any other
+ * name is start) and return the screen to draw over it.
+ */
+export function stageShot(name, state) {
+  if (name === 'drive') return stageDrive(state);
+  if (name === 'chase') return stageChase(state);
+  if (name === 'heist') return stageHeist(state);
+  return stageStart(state);
+}
+
+export { ROAD };

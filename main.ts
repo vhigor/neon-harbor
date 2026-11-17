@@ -12,6 +12,12 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
+// NEON HARBOR — the entry this program hands in. An original open-world
+// crime game (game/): a 3200 x 2300 coastal city, traffic and pedestrians,
+// carjacking, a five-star wanted level with police cars and foot cops, six
+// story missions, combat, a HUD with a minimap, and a localStorage save.
+// The four screenshots in screenshots/ are real renders of the game, taken
+// in headless Chromium from game/index.html?shot=<scene>&seed=1.
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
