@@ -17,7 +17,9 @@
 // carjacking, a five-star wanted level with police cars and foot cops, six
 // story missions, combat, a HUD with a minimap, and a localStorage save.
 // The four screenshots in screenshots/ are real renders of the game, taken
-// in headless Chromium from game/index.html?shot=<scene>&seed=1.
+// in headless Chromium from game/index.html?shot=<scene>&seed=1 — the cover
+// is the police chase (wanted level, patrol cars, mission and minimap in one
+// frame), then the drive, the vault job and the title screen.
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';

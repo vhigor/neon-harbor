@@ -229,6 +229,25 @@ export function createRenderer(canvas) {
         context.fillStyle = PALETTE.cash;
         context.fillRect(pickup.x - 9, y - 6, 18, 12);
         text('$', pickup.x, y, 13, '#0b3d1e', 'center', 'middle');
+      } else if (pickup.kind === 'repair') {
+        // A blue wrench kit: drive over it to patch the car up.
+        context.fillStyle = PALETTE.repair;
+        context.beginPath();
+        context.roundRect(pickup.x - 9, y - 9, 18, 18, 4);
+        context.fill();
+        context.save();
+        context.translate(pickup.x, y);
+        context.rotate(-Math.PI / 4);
+        context.strokeStyle = '#ffffff';
+        context.lineWidth = 2.5;
+        context.beginPath();
+        context.moveTo(-6, 6);
+        context.lineTo(3, -3);
+        context.stroke();
+        context.beginPath();
+        context.arc(5, -5, 3.5, -0.6, Math.PI * 1.4);
+        context.stroke();
+        context.restore();
       } else if (pickup.kind === 'health') {
         context.fillStyle = PALETTE.health;
         context.fillRect(pickup.x - 9, y - 9, 18, 18);

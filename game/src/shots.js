@@ -4,16 +4,16 @@
 // who aims at the nearest Viper), so the frame is what a short game
 // really looks like and the same seed always gives the same frame.
 
-import { STEP, ROAD } from './config.js';
+import { STEP, ROAD, PALETTE } from './config.js';
 import { resetGame, stepWorld } from './world.js';
-import { startMission } from './missions.js';
-import { landmarkPoint } from './city.js';
+import { startMission, spawnViper } from './missions.js';
+import { landmarkPoint, blockedAt } from './city.js';
 import { SCREEN_TITLE, SCREEN_PLAY } from './render.js';
 
 const START_SECONDS = 5;
 const DRIVE_SECONDS = 6;
-const CHASE_SECONDS = 5;
-const HEIST_SECONDS = 4;
+const CHASE_SECONDS = 2.5;
+const HEIST_SECONDS = 3;
 
 /** Steer a car toward a point: returns the { mx, my } the loop feeds in. */
 function driveToward(car, tx, ty) {
@@ -87,6 +87,76 @@ function stageDrive(state) {
   return { screen: SCREEN_PLAY, extra: { missionsDone: 0, earned: 0, hasSave: false, endKind: null } };
 }
 
+function makePoliceCar(id, x, y) {
+  return {
+    id,
+    x, y,
+    angle: Math.PI / 2,
+    speed: 315,
+    cruise: 315,
+    kind: 'police',
+    color: PALETTE.police,
+    health: 140,
+    maxHealth: 140,
+    driver: 'police',
+    axis: 'v',
+    line: 1460,
+    dir: 1,
+    stopped: false,
+    siren: 0,
+  };
+}
+
+function makeFootCop(x, y) {
+  return {
+    x, y,
+    angle: 0,
+    speed: 168,
+    color: PALETTE.police,
+    kind: 'cop',
+    health: 100,
+    state: 'walk',
+    fleeT: 0,
+    downT: 0,
+    axis: 'h',
+    dir: 1,
+    waitT: 0,
+    fareDest: null,
+    fareTimer: 0,
+    arrestT: 0,
+    shootT: 1,
+  };
+}
+
+/**
+ * Move every car out of the chase corridor (the avenue the run uses, and
+ * the two streets it crosses) onto roads the camera never sees, so the
+ * frame is a pursuit and not a pile-up. Parked cars go to the far avenue's
+ * edge; traffic keeps driving, just elsewhere.
+ */
+function clearChaseCorridor(state, avenue) {
+  for (const other of state.cars) {
+    // The patrol cars are staged separately, and the player's own car is
+    // the one the corridor is cleared for — neither moves.
+    if (other.driver === 'police' || other.driver === 'player') continue;
+    const onAvenue = other.axis === 'v' && other.line === avenue;
+    const crosses = other.axis === 'h' && (other.line === 600 || other.line === 960);
+    const parkedInCorridor = other.driver !== 'traffic'
+      && Math.abs(other.x - avenue) < 90 && other.y > 120 && other.y < 1500;
+    if (!onAvenue && !crosses && !parkedInCorridor) continue;
+    if (other.driver === 'traffic') {
+      other.axis = 'v';
+      other.line = 2260;
+      other.dir = 1;
+      other.x = 2236;
+      other.angle = Math.PI / 2;
+    } else {
+      other.x = 2260 + 62;
+      other.angle = Math.PI / 2;
+    }
+  }
+}
+
 function stageChase(state) {
   resetGame(state);
   startMission(state, 0);
@@ -94,18 +164,49 @@ function stageChase(state) {
   state.player.x = garage.x;
   state.player.y = garage.y;
   stepWorld(state, STEP, idleInput());
-  putPlayerInSportCar(state, 1060, 500);
+  // A clean high-speed pursuit down one long avenue: the Comet GT already
+  // rolling at speed, two patrol cars trailing in formation behind it.
+  const AVENUE = 1460;
+  const car = putPlayerInSportCar(state, AVENUE, 300);
+  car.speed = 300;
+  car.health = 78; // dented by the chase so far, not fresh off the lot
+  clearChaseCorridor(state, AVENUE);
+  // Two patrol cars on the player's tail, and two foot cops far away, so
+  // the department's wanted-3 response is full and no surprise unit
+  // spawns into the frame mid-run.
+  state.cars.push(makePoliceCar(9001, AVENUE - 24, 100));
+  state.cars.push(makePoliceCar(9002, AVENUE + 24, 60));
+  state.peds.push(makeFootCop(300, 300));
+  state.peds.push(makeFootCop(340, 340));
   state.wanted = 3;
   state.quietTime = 0;
   for (let i = 0; i < CHASE_SECONDS / STEP; i += 1) {
-    const car = state.cars.find((c) => c.id === state.player.inCar);
-    if (!car) break;
-    const input = driveToward(car, 1036, car.y + 500);
-    input.aim = car.angle;
+    const c = state.cars.find((cc) => cc.id === state.player.inCar);
+    if (!c) break;
+    const input = driveToward(c, AVENUE, c.y + 500);
+    input.aim = c.angle;
     input.firing = false;
     input.shootPressed = false;
     input.enter = false;
     stepWorld(state, STEP, input);
+  }
+  // Hold the pursuit in frame: the patrol cars settle into formation
+  // behind the Comet GT for the shot, light bars flashing.
+  const pc = state.cars.find((cc) => cc.id === state.player.inCar);
+  if (pc) {
+    const followers = state.cars.filter((cc) => cc.driver === 'police' && (cc.id === 9001 || cc.id === 9002));
+    if (followers[0]) {
+      followers[0].x = pc.x - 24;
+      followers[0].y = pc.y - 210;
+      followers[0].angle = Math.PI / 2;
+      followers[0].speed = 315;
+    }
+    if (followers[1]) {
+      followers[1].x = pc.x + 24;
+      followers[1].y = pc.y - 330;
+      followers[1].angle = Math.PI / 2;
+      followers[1].speed = 315;
+    }
   }
   return { screen: SCREEN_PLAY, extra: { missionsDone: 0, earned: 0, hasSave: false, endKind: null } };
 }
@@ -118,12 +219,27 @@ function stageHeist(state) {
   state.player.x = casino.x;
   state.player.y = casino.y;
   for (let i = 0; i < 30; i += 1) stepWorld(state, STEP, idleInput());
-  for (let i = 0; i < HEIST_SECONDS / STEP; i += 1) {
+  const steps = HEIST_SECONDS / STEP;
+  for (let i = 0; i < steps; i += 1) {
     const viper = nearestViper(state);
     const aim = viper ? Math.atan2(viper.y - state.player.y, viper.x - state.player.x) : state.player.angle;
     const input = { mx: 0, my: 0, aim, firing: !!viper, shootPressed: false, enter: false };
-    if (i === Math.floor(HEIST_SECONDS / STEP) - 1) state.fireCooldown = 0;
+    // A stream of tracers in the frame: fire on the last steps, not just one.
+    if (i >= steps - 3) state.fireCooldown = 0;
     stepWorld(state, STEP, input);
+  }
+  // One Viper still standing and closing in, so the fight reads in the
+  // frame instead of only its aftermath.
+  const spots = [
+    { x: state.player.x + 150, y: state.player.y - 90 },
+    { x: state.player.x - 150, y: state.player.y - 60 },
+    { x: state.player.x + 90, y: state.player.y + 150 },
+  ];
+  for (const spot of spots) {
+    if (!blockedAt(state.city, spot.x, spot.y, 12)) {
+      spawnViper(state, spot.x, spot.y);
+      break;
+    }
   }
   return { screen: SCREEN_PLAY, extra: { missionsDone: 0, earned: 0, hasSave: false, endKind: null } };
 }

@@ -124,7 +124,7 @@ function runGame() {
     return actions;
   }
 
-  function stepGame(actions) {
+  function stepGame(actions, firstStep) {
     const mouse = input.mouse();
     const aimPoint = renderer.worldPoint(mouse.x, mouse.y, state);
     const aim = Math.atan2(aimPoint.y - state.player.y, aimPoint.x - state.player.x);
@@ -133,8 +133,8 @@ function runGame() {
       my: input.moveY(),
       aim,
       firing: input.firing() || input.spaceHeld(),
-      shootPressed: !!(actions & ACTION_SHOOT),
-      enter: !!(actions & ACTION_ENTER),
+      shootPressed: firstStep && !!(actions & ACTION_SHOOT),
+      enter: firstStep && !!(actions & ACTION_ENTER),
       attract: false,
     };
     stepWorld(state, STEP, playInput);
@@ -158,8 +158,13 @@ function runGame() {
         accumulator -= STEP;
       }
     } else if (screen === SCREEN_PLAY) {
+      // One-shot presses (enter/exit a car, shoot) belong to the frame's
+      // first step only: a slow frame that catches up several steps must
+      // not press E twice and steal, then instantly un-steal, a car.
+      let firstStep = true;
       while (accumulator >= STEP && screen === SCREEN_PLAY) {
-        stepGame(actions);
+        stepGame(actions, firstStep);
+        firstStep = false;
         accumulator -= STEP;
       }
     } else {

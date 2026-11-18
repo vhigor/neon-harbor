@@ -6,7 +6,7 @@
 
 Neon Harbor is an original open-world crime game in the spirit of the classics, built from scratch: explore a sun-soaked coastal city on foot and by car, steal cars and outrun the Harbor Police, take fares, and run six story missions for Mara Voss and Dex Marlow — from a first delivery to the Meridian Casino vault job and the final run to Mara's yacht.
 
-The city is alive: traffic drives the road grid, pedestrians walk the sidewalks and flee gunfire, the wanted level brings foot cops and patrol cars, and the HUD carries your health, money, ammo, wanted stars, mission objective and a live minimap. Save your progress and keep roaming after the story ends.
+The city is alive: traffic drives the road grid, pedestrians walk the sidewalks and flee gunfire, the wanted level brings foot cops and patrol cars, and the HUD carries your health, money, ammo, wanted stars, mission objective and a live minimap. Blue wrench kits on the street patch up a battered car — drive over one while it still runs. Save your progress and keep roaming after the story ends.
 
 ## Run it
 

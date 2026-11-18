@@ -104,7 +104,7 @@ function openPoint(state, x, y, minDist, maxDist) {
   return { x, y };
 }
 
-function spawnViper(state, x, y) {
+export function spawnViper(state, x, y) {
   const ped = {
     x, y,
     angle: state.random.range(0, Math.PI * 2),

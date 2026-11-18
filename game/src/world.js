@@ -37,7 +37,8 @@ function makeCar(state, spot, driver) {
 }
 
 function scatterPickups(state) {
-  const kinds = ['cash', 'cash', 'cash', 'health', 'ammo'];
+  // Cash, health, ammo — and blue wrench kits that patch a battered car.
+  const kinds = ['cash', 'cash', 'cash', 'health', 'ammo', 'repair'];
   for (let i = 0; i < 14; i += 1) {
     const kind = kinds[i % kinds.length];
     const x = state.random.range(120, WORLD.width - 120);
@@ -45,7 +46,7 @@ function scatterPickups(state) {
     if (blockedAt(state.city, x, y, 10)) continue;
     state.pickups.push({
       x, y, kind,
-      amount: kind === 'cash' ? state.random.int(25, 100) : kind === 'health' ? 30 : 24,
+      amount: kind === 'cash' ? state.random.int(25, 100) : kind === 'health' ? 30 : kind === 'repair' ? 40 : 24,
       missionCash: false,
       bob: state.random.range(0, Math.PI * 2),
     });
@@ -452,6 +453,15 @@ function updatePickups(state, dt) {
     } else if (pickup.kind === 'health') {
       player.health = Math.min(PLAYER.health, player.health + pickup.amount);
       state.audio.pickup();
+    } else if (pickup.kind === 'repair') {
+      // A repair kit only works behind the wheel: on foot it stays on the
+      // street for the next time Rook has a car.
+      const car = player.inCar ? state.cars.find((c) => c.id === player.inCar) : null;
+      if (!car) continue;
+      car.health = Math.min(car.maxHealth, car.health + pickup.amount);
+      state.message = `Car repaired +${pickup.amount}.`;
+      state.messageT = 2;
+      state.audio.pickup();
     } else if (pickup.kind === 'ammo') {
       player.ammo = Math.min(PLAYER.maxAmmo, player.ammo + pickup.amount);
       state.audio.pickup();
@@ -462,13 +472,13 @@ function updatePickups(state, dt) {
   if (state.pickupTimer <= 0) {
     state.pickupTimer = 22;
     if (state.pickups.filter((p) => !p.missionCash).length < 14) {
-      const kind = state.random.pick(['cash', 'cash', 'health', 'ammo']);
+      const kind = state.random.pick(['cash', 'cash', 'health', 'ammo', 'repair']);
       const x = state.random.range(120, WORLD.width - 120);
       const y = state.random.range(120, WORLD.height - 120);
       if (!blockedAt(state.city, x, y, 10)) {
         state.pickups.push({
           x, y, kind,
-          amount: kind === 'cash' ? state.random.int(25, 100) : kind === 'health' ? 30 : 24,
+          amount: kind === 'cash' ? state.random.int(25, 100) : kind === 'health' ? 30 : kind === 'repair' ? 40 : 24,
           missionCash: false,
           bob: 0,
         });

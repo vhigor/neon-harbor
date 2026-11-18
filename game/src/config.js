@@ -114,6 +114,7 @@ export const PALETTE = {
   markerBad: '#ff4d4d',
   cash: '#7ee081',
   health: '#ff6b6b',
+  repair: '#2b8ce2',
   ammo: '#f2c94c',
 };
 
